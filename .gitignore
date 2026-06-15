@@ -1,0 +1,19 @@
+# Data files (download separately from IRA Kenya website)
+data/*.xlsx
+data/*.xls
+
+# Generated outputs
+outputs/*.png
+outputs/*.csv
+outputs/*.json
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
