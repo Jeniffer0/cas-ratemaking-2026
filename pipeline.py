@@ -7,14 +7,12 @@ A Machine Learning Framework for Market-Level Rate Adequacy Benchmarking
 Using Aggregate Regulatory Data from the Kenyan General Insurance Market
 
 Author  : Jeniffer Nasike Atetwe
-          Actuarial Assistant, Pioneer Insurance Company, Nairobi, Kenya
-          ProActuary (TASK) | BSc Actuarial Science
-          jeniffernasike@gmail.com
+          BSc Actuarial Science | OTHM Level 7 Diploma in Risk Management | International Diploma in Insurance Management | (TASK)
 
 License : Mozilla Public License 2.0 (MPL 2.0)
           https://www.mozilla.org/en-US/MPL/2.0/
 
-Repository : https://github.com/casact/<repo-name>
+Repository : https://github.com/Jeniffer0/cas-ratemaking-2026
 
 --------------------------------------------------------------------------------
 OVERVIEW
