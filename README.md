@@ -34,7 +34,7 @@ The pipeline is **jurisdiction-agnostic**. While the demonstration uses Insuranc
 ├── requirements.txt       # Python dependencies
 ├── LICENSE                 # MPL 2.0
 ├── README.md
-├── data/                   # Place IRA Kenya Excel files here (not included)
+├── data/                   # Included IRA Kenya Annual Statistics workbooks
 └── outputs/                # Generated figures, tables, and summary JSON
 ```
 
