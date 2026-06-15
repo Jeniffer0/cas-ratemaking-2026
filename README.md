@@ -128,8 +128,8 @@ If you use this pipeline, please cite:
 
 ## License
 
-This project is licensed under the Mozilla Public License 2.0 — see [LICENSE](LICENSE) for details.
+This project is licensed under the Mozilla Public License 2.0 - see [LICENSE](LICENSE) for details.
 
 ## Contact
 
-Jeniffer Nasike Atetwe — jeniffernasike@gmail.com
+Jeniffer Nasike Atetwe : jeniffernasike@gmail.com
