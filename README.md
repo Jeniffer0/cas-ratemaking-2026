@@ -16,15 +16,15 @@ The pipeline is **jurisdiction-agnostic**. While the demonstration uses Insuranc
 
 ## What the Pipeline Does
 
-1. **Data ingestion** — reads IRA Kenya Excel workbooks (insurer-by-class premiums, claims, reinsurance, balance sheets, P&L)
-2. **Feature engineering** — constructs 9 features from aggregate appendices, classified into accounting-linked vs. structural exogenous groups
-3. **Model training** — Elastic Net, Random Forest, LightGBM under temporal holdout (train 2023, test 2024)
-4. **Robustness analysis** — re-estimates models excluding underwriting margin
-5. **Information structure audit** — quantifies predictive contribution of each feature group
-6. **Lead-lag analysis** — tests temporal persistence of the target variable
-7. **Credibility-ML hybrid** — Buhlmann-Straub credibility weighting of LightGBM predictions
-8. **SHAP analysis** — feature attribution for both LightGBM and Random Forest
-9. **Decision framework output** — translates signals into actuarial recommendations
+1. **Data ingestion** : reads IRA Kenya Excel workbooks (insurer-by-class premiums, claims, reinsurance, balance sheets, P&L)
+2. **Feature engineering** : constructs 9 features from aggregate appendices, classified into accounting-linked vs. structural exogenous groups
+3. **Model training** : Elastic Net, Random Forest, LightGBM under temporal holdout (train 2023, test 2024)
+4. **Robustness analysis** : re-estimates models excluding underwriting margin
+5. **Information structure audit** : quantifies predictive contribution of each feature group
+6. **Lead-lag analysis** : tests temporal persistence of the target variable
+7. **Credibility-ML hybrid** : Buhlmann-Straub credibility weighting of LightGBM predictions
+8. **SHAP analysis** : feature attribution for both LightGBM and Random Forest
+9. **Decision framework output** : translates signals into actuarial recommendations
 
 ## Repository Structure
 
@@ -91,13 +91,13 @@ python pipeline.py
 The script will print progress for each of the 9 steps to the console, and write all outputs to `outputs/`:
 
 **Figures (300 dpi PNG):**
-- `fig1_icr_by_class.png` — ICR distribution by class (EDA)
-- `fig_heatmap_2023.png`, `fig_heatmap_2024.png` — insurer-class ICR heatmaps
-- `fig4_actual_vs_predicted.png` — model fit comparison
-- `fig5_credibility_weights.png` — Buhlmann-Straub Z distribution
-- `fig6_rate_adequacy_signals.png` — signals by class
-- `fig7_shap_importance.png` — SHAP bar chart
-- `fig8_shap_beeswarm.png` — SHAP beeswarm plot
+- `fig1_icr_by_class.png` : ICR distribution by class (EDA)
+- `fig_heatmap_2023.png`, `fig_heatmap_2024.png` : insurer-class ICR heatmaps
+- `fig4_actual_vs_predicted.png` : model fit comparison
+- `fig5_credibility_weights.png` : Buhlmann-Straub Z distribution
+- `fig6_rate_adequacy_signals.png` : signals by class
+- `fig7_shap_importance.png` : SHAP bar chart
+- `fig8_shap_beeswarm.png` : SHAP beeswarm plot
 
 **Tables (CSV):**
 - `table4_model_performance.csv`
@@ -107,7 +107,7 @@ The script will print progress for each of the 9 steps to the console, and write
 - `full_rate_adequacy_signals.csv`
 
 **Summary:**
-- `pipeline_summary.json` — all key statistics referenced in the paper
+- `pipeline_summary.json` : all key statistics referenced in the paper
 
 ## Adapting to Another Jurisdiction
 
@@ -118,7 +118,7 @@ To apply this framework to a different regulator's aggregate statistics (e.g. NA
 3. Update `FILE_2023` / `FILE_2024` (or extend to additional years if available)
 4. Run `python pipeline.py`
 
-All downstream steps — feature engineering, modelling, the information structure audit, the credibility hybrid, SHAP analysis, and the decision framework — require no further changes.
+All downstream steps : feature engineering, modelling, the information structure audit, the credibility hybrid, SHAP analysis, and the decision framework :  require no further changes.
 
 ## Citation
 
