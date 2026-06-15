@@ -59,17 +59,9 @@ pip install -r requirements.txt
 
 ### 3. Obtain the data
 
-The IRA Kenya Annual Insurance Industry Statistics are publicly available at
-[https://www.ira.go.ke](https://www.ira.go.ke) under "Publications" / "Annual Reports."
+The 2023 and 2024 IRA Kenya Annual Insurance Industry Statistics used in this study are included in this repository in the `data/` folder.
 
-Download the 2023 and 2024 Annual Insurance Industry Statistics workbooks and place them in the `data/` folder:
-
-```
-data/IRA_Kenya_Annual_Statistics_2023.xlsx
-data/IRA_Kenya_Annual_Statistics_2024.xlsx
-```
-
-> **Note:** These files are not included in this repository due to their size and because they are third-party regulatory publications. They are freely downloadable from the IRA Kenya website.
+No external download is required to run the pipeline.
 
 ### 4. Configure file paths (if needed)
 
