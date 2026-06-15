@@ -43,7 +43,7 @@ The pipeline is **jurisdiction-agnostic**. While the demonstration uses Insuranc
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/<your-username>/cas-ratemaking-2026.git
+git clone https://github.com/Jeniffer0/cas-ratemaking-2026.git
 cd cas-ratemaking-2026
 ```
 
