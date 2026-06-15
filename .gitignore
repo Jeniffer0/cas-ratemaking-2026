@@ -1,6 +1,3 @@
-# Data files (download separately from IRA Kenya website)
-data/*.xlsx
-data/*.xls
 
 # Generated outputs
 outputs/*.png
