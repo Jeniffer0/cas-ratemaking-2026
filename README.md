@@ -2,7 +2,7 @@
 
 **A Machine Learning and Credibility Approach with Evidence from Kenya**
 
-2026 CAS Ratemaking Call Paper Program — Jeniffer Nasike Atetwe
+2026 CAS Ratemaking Call Paper Program - Jeniffer Nasike Atetwe
 
 ---
 
