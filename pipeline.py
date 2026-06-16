@@ -1,13 +1,15 @@
 """
 ================================================================================
-CAS E-FORUM 2026 CALL PAPER
+CAS RATEMAKING CALL PAPER 2026
 
-Enhancing Insurance Ratemaking Under Data Constraints:
-A Machine Learning Framework for Market-Level Rate Adequacy Benchmarking
-Using Aggregate Regulatory Data from the Kenyan General Insurance Market
+Market-Level Rate Adequacy Benchmarking Using Aggregate Regulatory Data:
+A Machine Learning and Credibility Approach with Evidence from Kenya
 
 Author  : Jeniffer Nasike Atetwe
-          BSc Actuarial Science | OTHM Level 7 Diploma in Risk Management | International Diploma in Insurance Management | (TASK)
+          Independent Actuarial Researcher
+          BSc Actuarial Science | OTHM Level 7 Diploma in Risk Management
+          International Diploma in Insurance Management | TASK
+          jeniffernasike@gmail.com
 
 License : Mozilla Public License 2.0 (MPL 2.0)
           https://www.mozilla.org/en-US/MPL/2.0/
@@ -17,7 +19,7 @@ Repository : https://github.com/Jeniffer0/cas-ratemaking-2026
 --------------------------------------------------------------------------------
 OVERVIEW
 --------------------------------------------------------------------------------
-This pipeline replicates the full methodology of the paper in nine steps:
+This pipeline replicates the full methodology of the paper in thirteen steps:
 
   Step 1  Data ingestion from IRA Kenya Excel workbooks (2023 and 2024)
   Step 2  Long-format dataset construction (insurer x class x year)
@@ -28,6 +30,10 @@ This pipeline replicates the full methodology of the paper in nine steps:
   Step 7  Buhlmann-Straub credibility-ML hybrid
   Step 8  SHAP analysis and visualisation
   Step 9  Decision framework output and summary statistics
+  Step 10 Robustness check excluding underwriting margin (Section 6.2)
+  Step 11 Information structure audit by feature group (Section 6.3)
+  Step 12 Lead-lag analysis: 2023 ICR -> 2024 ICR persistence (Section 6.4)
+  Step 13 Random Forest SHAP comparison for Appendix A
 
 All outputs (figures, CSV tables, JSON summary) are saved to /outputs/.
 
@@ -76,10 +82,11 @@ import openpyxl
 import lightgbm as lgb
 import shap
 
-from sklearn.linear_model import ElasticNetCV
+from sklearn.linear_model import ElasticNetCV, LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import mean_absolute_error, r2_score
+from scipy.stats import spearmanr
 
 warnings.filterwarnings("ignore")
 os.makedirs("outputs", exist_ok=True)
@@ -663,6 +670,130 @@ def run_robustness(df_model):
                        'r2':  round(r2_score(y_te, yp_l_no), 4)},
     }
 
+
+# ==============================================================================
+# STEP 5c: INFORMATION STRUCTURE AUDIT (Section 6.3, Table 7)
+# ==============================================================================
+
+def run_information_structure_audit(df_model):
+    """
+    Estimate RF and LightGBM under three feature specifications:
+      - Full (all 9 features)
+      - Accounting-linked only (underwriting margin alone)
+      - Structural exogenous only (8 features excluding underwriting margin)
+
+    Returns a dict of R-squared values for each specification x model.
+    """
+    TARGET_COL = 'loss_ratio_w'
+    ACCOUNTING_ONLY  = ['uw_margin']
+    STRUCTURAL_ONLY  = [f for f in FEATURES if f != 'uw_margin']
+
+    train = df_model['year'] == 2023
+    test  = df_model['year'] == 2024
+    y_tr = df_model.loc[train, TARGET_COL].values
+    y_te = df_model.loc[test,  TARGET_COL].values
+
+    def _fit_eval(feat_list):
+        X_tr = df_model.loc[train, feat_list].values
+        X_te = df_model.loc[test,  feat_list].values
+        rf = RandomForestRegressor(**RF_PARAMS)
+        rf.fit(X_tr, y_tr)
+        r2_rf = r2_score(y_te, rf.predict(X_te))
+        lgbm = lgb.LGBMRegressor(**LGBM_PARAMS)
+        lgbm.fit(X_tr, y_tr)
+        r2_lgbm = r2_score(y_te, lgbm.predict(X_te))
+        return round(r2_rf, 4), round(r2_lgbm, 4)
+
+    full_rf, full_lgbm   = _fit_eval(FEATURES)
+    acct_rf, acct_lgbm   = _fit_eval(ACCOUNTING_ONLY)
+    struct_rf, struct_lgbm = _fit_eval(STRUCTURAL_ONLY)
+
+    return {
+        "full":       {"rf_r2": full_rf,   "lgbm_r2": full_lgbm},
+        "accounting": {"rf_r2": acct_rf,   "lgbm_r2": acct_lgbm},
+        "structural": {"rf_r2": struct_rf, "lgbm_r2": struct_lgbm},
+    }
+
+
+# ==============================================================================
+# STEP 5d: LEAD-LAG ANALYSIS (Section 6.4)
+# ==============================================================================
+
+def run_lead_lag(df_model):
+    """
+    Regress 2024 ICR on 2023 ICR for matched insurer-class pairs to test
+    temporal persistence (supports the contemporaneous benchmarking framing).
+
+    Returns dict with r2, mae, slope, intercept, n_pairs.
+    """
+    df23 = df_model.loc[df_model['year'] == 2023,
+                         ['insurer', 'class', 'loss_ratio_w']].rename(
+                             columns={'loss_ratio_w': 'lag_icr'})
+    df24 = df_model.loc[df_model['year'] == 2024,
+                         ['insurer', 'class', 'loss_ratio_w']]
+    merged = df24.merge(df23, on=['insurer', 'class'], how='inner')
+
+    if len(merged) == 0:
+        return {"r2": None, "mae": None, "slope": None,
+                "intercept": None, "n_pairs": 0}
+
+    X = merged[['lag_icr']].values
+    y = merged['loss_ratio_w'].values
+    lr = LinearRegression()
+    lr.fit(X, y)
+    pred = lr.predict(X)
+
+    return {
+        "r2":        round(r2_score(y, pred), 3),
+        "mae":       round(mean_absolute_error(y, pred), 1),
+        "slope":     round(float(lr.coef_[0]), 3),
+        "intercept": round(float(lr.intercept_), 2),
+        "n_pairs":   int(len(merged)),
+    }
+
+
+# ==============================================================================
+# STEP 5e: RF SHAP FOR APPENDIX A (LightGBM vs Random Forest SHAP comparison)
+# ==============================================================================
+
+def run_rf_shap_appendix(df_model, mean_abs_shap_lgbm):
+    """
+    Fit Random Forest on the full dataset, compute SHAP values, and compare
+    feature rankings with the LightGBM SHAP rankings (Appendix A, Table A1).
+
+    Returns dict with rf SHAP values (mean abs), and Spearman rank
+    correlation with the LightGBM SHAP rankings.
+    """
+    X = df_model[FEATURES].values
+    y = df_model[TARGET].values
+
+    rf_full = RandomForestRegressor(**RF_PARAMS)
+    rf_full.fit(X, y)
+
+    explainer_rf = shap.TreeExplainer(rf_full)
+    shap_values_rf = explainer_rf.shap_values(X)
+
+    mean_abs_shap_rf = pd.Series(
+        np.abs(shap_values_rf).mean(axis=0), index=FEATURE_LABELS
+    ).sort_values(ascending=False)
+
+    # Rank correlation between LGBM and RF SHAP orderings
+    lgbm_ranks = {f: i for i, f in enumerate(mean_abs_shap_lgbm.index, 1)}
+    rf_ranks   = {f: i for i, f in enumerate(mean_abs_shap_rf.index, 1)}
+    common = list(mean_abs_shap_lgbm.index)
+    lgbm_r = [lgbm_ranks[f] for f in common]
+    rf_r   = [rf_ranks[f]   for f in common]
+    corr, pval = spearmanr(lgbm_r, rf_r)
+
+    return {
+        "rf_shap": mean_abs_shap_rf,
+        "lgbm_ranks": lgbm_ranks,
+        "rf_ranks": rf_ranks,
+        "spearman_corr": round(float(corr), 3),
+        "spearman_pval": round(float(pval), 4),
+    }
+
+
 # ==============================================================================
 # STEP 6: FULL-DATASET LIGHTGBM (for SHAP and signals)
 # ==============================================================================
@@ -906,6 +1037,75 @@ def save_all_outputs(results, df_model, mean_abs_shap,
 
 
 # ==============================================================================
+# STEPS 10-13: ADDITIONAL OUTPUT TABLES (robustness, info audit, lead-lag,
+#              Appendix A SHAP comparison)
+# ==============================================================================
+
+def save_appendix_outputs(robustness, info_audit, lead_lag, appendix_a,
+                           mean_abs_shap_lgbm):
+    """Save Table 6 (robustness), Table 7 (information structure audit),
+    lead-lag summary, and Table A1 (SHAP comparison) to outputs/."""
+
+    # Table 6: Robustness check (Section 6.2)
+    pd.DataFrame([
+        {"Model": "Random Forest", "MAE Full": None, "R2 Full": None,
+         "MAE No UW": robustness["rf_no_uw"]["mae"],
+         "R2 No UW":  robustness["rf_no_uw"]["r2"]},
+        {"Model": "LightGBM", "MAE Full": None, "R2 Full": None,
+         "MAE No UW": robustness["lgbm_no_uw"]["mae"],
+         "R2 No UW":  robustness["lgbm_no_uw"]["r2"]},
+    ]).to_csv("outputs/table6_robustness.csv", index=False)
+
+    # Table 7: Information structure audit (Section 6.3)
+    pd.DataFrame([
+        {"Specification": "Full (9 features)",
+         "RF R2":   info_audit["full"]["rf_r2"],
+         "LGBM R2": info_audit["full"]["lgbm_r2"]},
+        {"Specification": "Accounting-linked only (UW margin)",
+         "RF R2":   info_audit["accounting"]["rf_r2"],
+         "LGBM R2": info_audit["accounting"]["lgbm_r2"]},
+        {"Specification": "Structural exogenous only (8 features)",
+         "RF R2":   info_audit["structural"]["rf_r2"],
+         "LGBM R2": info_audit["structural"]["lgbm_r2"]},
+    ]).to_csv("outputs/table7_information_structure.csv", index=False)
+
+    # Lead-lag summary (Section 6.4)
+    pd.DataFrame([lead_lag]).to_csv("outputs/leadlag_summary.csv", index=False)
+
+    # Table A1: SHAP comparison (Appendix A)
+    rows = []
+    for feat in mean_abs_shap_lgbm.index:
+        rows.append({
+            "Feature": feat,
+            "LGBM Rank": appendix_a["lgbm_ranks"][feat],
+            "LGBM |SHAP|": round(mean_abs_shap_lgbm[feat], 3),
+            "RF Rank": appendix_a["rf_ranks"][feat],
+            "RF |SHAP|": round(appendix_a["rf_shap"][feat], 3),
+        })
+    pd.DataFrame(rows).to_csv("outputs/tableA1_shap_comparison.csv", index=False)
+
+    # Append these to the JSON summary
+    with open("outputs/pipeline_summary.json", "r") as f:
+        summary = json.load(f)
+    summary["robustness"] = robustness
+    summary["information_structure_audit"] = info_audit
+    summary["lead_lag"] = lead_lag
+    summary["appendix_a"] = {
+        "spearman_corr": appendix_a["spearman_corr"],
+        "spearman_pval": appendix_a["spearman_pval"],
+        "rf_shap": {f: round(v, 3) for f, v in appendix_a["rf_shap"].items()},
+    }
+    with open("outputs/pipeline_summary.json", "w") as f:
+        json.dump(summary, f, indent=2)
+
+    print("  Saved: outputs/table6_robustness.csv")
+    print("  Saved: outputs/table7_information_structure.csv")
+    print("  Saved: outputs/leadlag_summary.csv")
+    print("  Saved: outputs/tableA1_shap_comparison.csv")
+    print("  Updated: outputs/pipeline_summary.json")
+
+
+# ==============================================================================
 # MAIN
 # ==============================================================================
 
@@ -983,6 +1183,49 @@ def main():
     save_all_outputs(results, df_model, mean_abs_shap,
                      icr_lo, icr_hi, wlr_2023, wlr_2024)
 
+    # Step 10: Robustness check (Section 6.2, Table 6)
+    print("\n[Step 10] Robustness check (excluding underwriting margin)...")
+    robustness = run_robustness(df_model)
+    print(f"  Random Forest, no UW: MAE={robustness['rf_no_uw']['mae']:.1f}pp  "
+          f"R2={robustness['rf_no_uw']['r2']:.3f}")
+    print(f"  LightGBM,      no UW: MAE={robustness['lgbm_no_uw']['mae']:.1f}pp  "
+          f"R2={robustness['lgbm_no_uw']['r2']:.3f}")
+
+    # Step 11: Information structure audit (Section 6.3, Table 7)
+    print("\n[Step 11] Information structure audit...")
+    info_audit = run_information_structure_audit(df_model)
+    print(f"  Full (9 features):      RF R2={info_audit['full']['rf_r2']:.3f}  "
+          f"LGBM R2={info_audit['full']['lgbm_r2']:.3f}")
+    print(f"  Accounting-only (UW):   RF R2={info_audit['accounting']['rf_r2']:.3f}  "
+          f"LGBM R2={info_audit['accounting']['lgbm_r2']:.3f}")
+    print(f"  Structural-only (8 ft): RF R2={info_audit['structural']['rf_r2']:.3f}  "
+          f"LGBM R2={info_audit['structural']['lgbm_r2']:.3f}")
+
+    # Step 12: Lead-lag analysis (Section 6.4)
+    print("\n[Step 12] Lead-lag analysis (2023 ICR -> 2024 ICR)...")
+    lead_lag = run_lead_lag(df_model)
+    if lead_lag["n_pairs"] > 0:
+        print(f"  N={lead_lag['n_pairs']} matched pairs | "
+              f"R2={lead_lag['r2']:.3f} | MAE={lead_lag['mae']:.1f}pp | "
+              f"slope={lead_lag['slope']:.3f} | intercept={lead_lag['intercept']:.2f}")
+    else:
+        print("  No matched insurer-class pairs found across years.")
+
+    # Step 13: RF SHAP for Appendix A (LightGBM vs Random Forest comparison)
+    print("\n[Step 13] RF SHAP comparison (Appendix A)...")
+    appendix_a = run_rf_shap_appendix(df_model, mean_abs_shap)
+    print(f"  Spearman rank correlation (LGBM vs RF SHAP) = "
+          f"{appendix_a['spearman_corr']:.3f} (p={appendix_a['spearman_pval']:.4f})")
+    for feat in mean_abs_shap.index:
+        print(f"    {feat:35s}: LGBM rank {appendix_a['lgbm_ranks'][feat]:>2d}  "
+              f"({mean_abs_shap[feat]:.2f}pp)  |  "
+              f"RF rank {appendix_a['rf_ranks'][feat]:>2d}  "
+              f"({appendix_a['rf_shap'][feat]:.2f}pp)")
+
+    # Save the additional Steps 10-13 outputs
+    save_appendix_outputs(robustness, info_audit, lead_lag, appendix_a,
+                           mean_abs_shap)
+
     print("\n" + "=" * 70)
     print("PIPELINE COMPLETE — all outputs in /outputs/")
     print("=" * 70)
@@ -998,11 +1241,15 @@ Figures:
   fig8_shap_beeswarm.png           SHAP beeswarm plot
 
 Tables:
-  table4_model_performance.csv     MAE / R-squared comparison
-  table5_class_signals.csv         Rate adequacy signals by class
-  table6_shap_importance.csv       SHAP feature importance ranking
-  table7_decision_framework.csv    Decision framework
-  full_rate_adequacy_signals.csv   Per-insurer-class signals
+  table4_model_performance.csv         MAE / R-squared comparison (Table 5)
+  table5_class_signals.csv             Rate adequacy signals by class (Table 8)
+  table6_shap_importance.csv           SHAP feature importance ranking (Table 9)
+  table6_robustness.csv                Robustness check, excl. UW margin (Table 6)
+  table7_decision_framework.csv        Decision framework (Table 10)
+  table7_information_structure.csv     Information structure audit (Table 7)
+  tableA1_shap_comparison.csv          LGBM vs RF SHAP comparison (Table A1)
+  leadlag_summary.csv                  Lead-lag regression summary (Section 6.4)
+  full_rate_adequacy_signals.csv       Per-insurer-class signals
 
 Summary:
   pipeline_summary.json            All key statistics for paper
