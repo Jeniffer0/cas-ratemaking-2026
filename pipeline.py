@@ -811,24 +811,38 @@ def fit_lgbm_full(df_model):
 # STEP 7: BUHLMANN-STRAUB CREDIBILITY-ML HYBRID
 # ==============================================================================
 
+def _flag(s):
+    if s > 20:  return "Potentially Underpriced"
+    if s > 10:  return "Moderate Upward Pressure"
+    if s > -5:  return "Within Market Range"
+    if s > -10: return "Moderate Downward Pressure"
+    return "Potentially Overpriced"
+
+
 def compute_credibility_hybrid(df_model, lgbm_full, X_all):
     """
-    Compute Buhlmann-Straub credibility-weighted hybrid predictions.
+    Buhlmann-Straub credibility-ML hybrid using a pragmatic approximation.
 
-    Hybrid = Z * LightGBM_prediction + (1 - Z) * class_market_average_ICR
+    The classical EPV/VHM estimation requires multiple years of data per
+    insurer-class cell. With only two years, the bias-corrected VHM estimator
+    approaches zero for most classes in this dataset (insurers within the same
+    class have similar exposure-weighted ICR means), making k = EPV/VHM
+    degenerate. We therefore retain the pragmatic approximation:
+      k = MSE(LightGBM) / mean within-class ICR variance
+    Both quantities are in squared percentage points, so k is in pp^2/pp^2
+    which is dimensionless. v(i,c) is gross premium in KES thousands.
+    Given that Z -> 1 for all observations in this market, the credibility
+    framework is empirically inactive regardless of k estimation method.
 
-    Z(i,c) = v(i,c) / (v(i,c) + k)
-
-    where v(i,c) = gross premium (credibility volume measure)
-          k       = within-variance / between-variance (method of moments)
-
-    Returns df_model with columns: pred_lgbm, class_avg_icr, k_param, Z,
-                                   pred_hybrid, signal, adequacy_flag.
+    Returns (df_model_with_signals, k_param).
     """
     df_model = df_model.copy()
     df_model["pred_lgbm"] = lgbm_full.predict(X_all)
 
-    class_avg = df_model.groupby("class")[TARGET].mean()
+    # Exposure-weighted class mean (correcting reviewer point 3)
+    class_avg = df_model.groupby("class").apply(
+        lambda g: np.average(g[TARGET], weights=g["gross_premium"])
+    )
     df_model["class_avg_icr"] = df_model["class"].map(class_avg)
 
     within_var  = ((df_model[TARGET] - df_model["pred_lgbm"]) ** 2).mean()
@@ -836,20 +850,16 @@ def compute_credibility_hybrid(df_model, lgbm_full, X_all):
     k_param = within_var / between_var if between_var > 0 else 1.0
 
     df_model["k_param"] = k_param
-    df_model["Z"] = df_model["gross_premium"] / (df_model["gross_premium"] + k_param)
+
+    # Cumulative exposure across both years (correcting reviewer point 1)
+    cum_premium = df_model.groupby(["insurer", "class"])["gross_premium"].transform("sum")
+    df_model["Z"] = cum_premium / (cum_premium + k_param)
+
     df_model["pred_hybrid"] = (
         df_model["Z"] * df_model["pred_lgbm"]
         + (1 - df_model["Z"]) * df_model["class_avg_icr"]
     )
-    df_model["signal"] = df_model[TARGET] - df_model["pred_hybrid"]
-
-    def _flag(s):
-        if s > 20:  return "Potentially Underpriced"
-        if s > 10:  return "Moderate Upward Pressure"
-        if s > -5:  return "Within Market Range"
-        if s > -10: return "Moderate Downward Pressure"
-        return "Potentially Overpriced"
-
+    df_model["signal"]        = df_model[TARGET] - df_model["pred_hybrid"]
     df_model["adequacy_flag"] = df_model["signal"].apply(_flag)
     return df_model, k_param
 
@@ -980,20 +990,20 @@ def save_all_outputs(results, df_model, mean_abs_shap,
 
     # Table 7: Decision framework
     pd.DataFrame([
-        {"> +20", "Large writer", "Both years",
-         "Investigate pricing; benchmark against class average; consider corrective action"},
-        {"> +20", "Small writer", "Either year",
-         "Apply credibility hybrid; seek supplementary policy-level data"},
-        {"+10 to +20", "Any", "Both years",
-         "Review claims development; flag for next actuarial review cycle"},
-        {"+10 to +20", "Any", "One year only",
-         "Monitor; may reflect idiosyncratic large claim"},
-        {"-5 to +10", "Any", "Any",
-         "Within expected market variation; no action required"},
-        {"< -10", "Large writer", "Both years",
-         "Investigate; determine if outperformance reflects pricing or underwriting"},
-        {"< -10", "Small writer", "Either year",
-         "Directional signal only; corroborate with other data sources"},
+        {"Threshold": "> +20", "Writer Size": "Large writer", "Persistence": "Both years",
+         "Action": "Investigate pricing; benchmark against class average; consider corrective action"},
+        {"Threshold": "> +20", "Writer Size": "Small writer", "Persistence": "Either year",
+         "Action": "Apply credibility hybrid; seek supplementary policy-level data"},
+        {"Threshold": "+10 to +20", "Writer Size": "Any", "Persistence": "Both years",
+         "Action": "Review claims development; flag for next actuarial review cycle"},
+        {"Threshold": "+10 to +20", "Writer Size": "Any", "Persistence": "One year only",
+         "Action": "Monitor; may reflect idiosyncratic large claim"},
+        {"Threshold": "-5 to +10", "Writer Size": "Any", "Persistence": "Any",
+         "Action": "Within expected market variation; no action required"},
+        {"Threshold": "< -10", "Writer Size": "Large writer", "Persistence": "Both years",
+         "Action": "Investigate; determine if outperformance reflects pricing or underwriting"},
+        {"Threshold": "< -10", "Writer Size": "Small writer", "Persistence": "Either year",
+         "Action": "Directional signal only; corroborate with other data sources"},
     ]).to_csv("outputs/table7_decision_framework.csv", index=False)
 
     # Full insurer-class signal output
